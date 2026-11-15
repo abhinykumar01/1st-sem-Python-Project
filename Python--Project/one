@@ -1,0 +1,331 @@
+import os
+import csv
+from datetime import datetime
+import tkinter as tk
+from tkinter import ttk, messagebox
+import pandas as pd
+
+# File paths
+EXPENSE_FILE = "expenses.csv"
+BUDGET_FILE = "budget.txt"
+
+def initialize_files():
+    """Ensure expenses.csv and budget file exist in the directory."""
+    if not os.path.exists(EXPENSE_FILE):
+        with open(EXPENSE_FILE, mode='w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Date", "Category", "Amount"])
+            
+    if not os.path.exists(BUDGET_FILE):
+        with open(BUDGET_FILE, mode='w') as f:
+            f.write("0.0")
+
+class ExpenseManagerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Personal Expense & Budget Manager")
+        self.root.geometry("880x650")
+        self.root.minsize(820, 600)
+        
+        try:
+            # Option A: Using raw string (r"...") and a .png file
+            self.icon_image = tk.PhotoImage(file=r"C:\Users\adity\OneDrive\Desktop\abhiny\icon.png")
+            
+            # OR Option B: Using forward slashes
+            # self.icon_image = tk.PhotoImage(file="C:/Users/adity/OneDrive/Desktop/abhiny/icon.png")
+            
+            self.root.iconphoto(True, self.icon_image)
+        except Exception as e:
+            print(f"Icon could not be loaded: {e}")
+        
+        # Initialize storage files if missing
+        initialize_files()
+        
+        # Styling configuration
+        self.style = ttk.Style()
+        self.style.theme_use("clam")
+        
+        # Color Palette
+        self.primary_color = "#1e293b"  # Dark Slate
+        self.accent_color = "#2563eb"   # Vibrant Blue
+        self.success_color = "#059669"  # Emerald Green
+        self.danger_color = "#dc2626"   # Red
+        self.bg_color = "#f8fafc"       # Soft Light Gray
+        
+        self.root.configure(bg=self.bg_color)
+        
+        self.create_widgets()
+        self.load_data()
+
+    def create_widgets(self):
+        # 1. Header Banner
+        header_frame = tk.Frame(self.root, bg=self.primary_color, pady=15)
+        header_frame.pack(fill=tk.X)
+        
+        title_label = tk.Label(header_frame, text="Personal Expense & Budget Manager", 
+                               font=("Arial", 18, "bold"), fg="white", bg=self.primary_color)
+        title_label.pack()
+
+        # Main Container Frame
+        main_container = ttk.Frame(self.root, padding=15)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # 2. Budget Control Section
+        budget_frame = ttk.LabelFrame(main_container, text=" Budget Setup ", padding=10)
+        budget_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(budget_frame, text="Monthly Budget (₹):", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.budget_entry = ttk.Entry(budget_frame, font=("Arial", 10), width=15)
+        self.budget_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        set_budget_btn = ttk.Button(budget_frame, text="Set Budget", command=self.set_budget)
+        set_budget_btn.grid(row=0, column=2, padx=5)
+
+        self.budget_status_label = ttk.Label(budget_frame, text="Current Budget: 0.00", font=("Arial", 10, "italic"), foreground="#475569")
+        self.budget_status_label.grid(row=0, column=3, padx=20, sticky=tk.W)
+
+        # 3. Add Expense Section
+        add_frame = ttk.LabelFrame(main_container, text=" Add New Expense ", padding=10)
+        add_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(add_frame, text="Date (YYYY-MM-DD):", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.date_entry = ttk.Entry(add_frame, font=("Arial", 10), width=14)
+        self.date_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        self.date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+
+        ttk.Label(add_frame, text="Category:", font=("Arial", 10)).grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        self.category_combo = ttk.Combobox(add_frame, font=("Arial", 10), width=14, values=["Food", "Travel", "Utilities", "Entertainment", "Shopping", "Others"])
+        self.category_combo.grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
+        self.category_combo.set("Food")
+
+        ttk.Label(add_frame, text="Amount (₹):", font=("Arial", 10)).grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
+        self.amount_entry = ttk.Entry(add_frame, font=("Arial", 10), width=14)
+        self.amount_entry.grid(row=0, column=5, sticky=tk.W, padx=5, pady=5)
+
+        add_btn = ttk.Button(add_frame, text="Add Expense", command=self.add_expense)
+        add_btn.grid(row=0, column=6, padx=10, pady=5)
+
+        # 4. Data Table & Summary Section (Split View)
+        bottom_frame = ttk.Frame(main_container)
+        bottom_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+
+        # Table for Expenses
+        table_frame = ttk.LabelFrame(bottom_frame, text=" Expense Records ", padding=10)
+        table_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+
+        columns = ("Date", "Category", "Amount")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=12)
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=110, anchor=tk.CENTER)
+        
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Summary Panel
+        report_frame = ttk.LabelFrame(bottom_frame, text=" Category Summary & Report ", padding=10)
+        report_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, padx=(5, 0))
+
+        self.summary_text = tk.Text(report_frame, width=32, height=12, font=("Consolas", 9), bg="#ffffff", relief=tk.SOLID, bd=1)
+        self.summary_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.summary_text.config(state=tk.DISABLED)
+
+        report_btn = ttk.Button(report_frame, text="Generate Full Report", command=self.generate_report)
+        report_btn.pack(fill=tk.X)
+
+        # 5. Status / Message Banner
+        self.status_bar = tk.Label(self.root, text="System Ready.", font=("Arial", 10, "bold"), bg="#e2e8f0", fg="#1e293b", anchor=tk.W, padx=10, pady=6)
+        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    def get_budget(self):
+        try:
+            if os.path.exists(BUDGET_FILE):
+                with open(BUDGET_FILE, 'r') as f:
+                    content = f.read().strip()
+                    return float(content) if content else 0.0
+        except Exception:
+            return 0.0
+        return 0.0
+
+    def save_budget(self, amount):
+        with open(BUDGET_FILE, 'w') as f:
+            f.write(str(amount))
+
+    def set_budget(self):
+        val_str = self.budget_entry.get().strip()
+        try:
+            budget_val = float(val_str)
+            if budget_val < 0:
+                raise ValueError("Budget cannot be negative.")
+            self.save_budget(budget_val)
+            msg = f"Monthly budget set: {budget_val:g}"
+            self.budget_status_label.config(text=f"Current Budget: {budget_val:g}")
+            self.status_bar.config(text=msg, fg=self.success_color)
+            messagebox.showinfo("Success", msg)
+            self.update_summary()
+        except ValueError as e:
+            err_msg = "Invalid budget amount. Please enter a valid positive number." if "could not convert" in str(e) else str(e)
+            self.status_bar.config(text=err_msg, fg=self.danger_color)
+            messagebox.showerror("Error", err_msg)
+
+    def add_expense(self):
+        date_str = self.date_entry.get().strip()
+        category = self.category_combo.get().strip()
+        amount_str = self.amount_entry.get().strip()
+
+        # 1. Date Validation (YYYY-MM-DD)
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            err_msg = "Invalid date. Use YYYY-MM-DD."
+            self.status_bar.config(text=err_msg, fg=self.danger_color)
+            messagebox.showerror("Validation Error", err_msg)
+            return
+
+        # 2. Amount Validation (Positive number check)
+        try:
+            amount = float(amount_str)
+            if amount <= 0:
+                raise ValueError("Amount must be a positive number.")
+        except ValueError:
+            err_msg = "Invalid amount. Amount must be a positive number."
+            self.status_bar.config(text=err_msg, fg=self.danger_color)
+            messagebox.showerror("Validation Error", err_msg)
+            return
+
+        # Append to CSV file
+        try:
+            with open(EXPENSE_FILE, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([date_str, category, amount])
+        except Exception as e:
+            messagebox.showerror("File Error", f"Could not save expense: {e}")
+            return
+
+        # Clear amount field for next entry
+        self.amount_entry.delete(0, tk.END)
+
+        # Reload data and calculate budget thresholds
+        self.load_data()
+        
+        budget = self.get_budget()
+        df = pd.read_csv(EXPENSE_FILE)
+        total_spent = df["Amount"].sum() if not df.empty else 0.0
+        remaining = budget - total_spent
+        pct = (total_spent / budget * 100) if budget > 0 else 0.0
+
+        # Build response message matching test specifications
+        success_text = f"Expense saved. Total spent: {total_spent:g} | Remaining: {remaining:g}"
+        if budget > 0:
+            if total_spent == budget:
+                success_text += " | Budget fully used (100.00%)."
+            elif total_spent > budget:
+                success_text += f" | Budget exceeded by {abs(remaining):g}!"
+            elif pct >= 80:
+                success_text += f" | Warning: {pct:.2f}% of the budget used."
+        
+        self.status_bar.config(text=success_text, fg=self.success_color if total_spent <= budget else self.danger_color)
+        messagebox.showinfo("Expense Saved", success_text)
+        self.update_summary()
+
+    def load_data(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        current_budget = self.get_budget()
+        if current_budget > 0 and not self.budget_entry.get():
+            self.budget_entry.insert(0, f"{current_budget:g}")
+        self.budget_status_label.config(text=f"Current Budget: {current_budget:g}")
+
+        if os.path.exists(EXPENSE_FILE):
+            try:
+                df = pd.read_csv(EXPENSE_FILE)
+                for _, row in df.iterrows():
+                    self.tree.insert("", tk.END, values=(row["Date"], row["Category"], row["Amount"]))
+            except Exception as e:
+                print(f"Error loading CSV: {e}")
+        
+        self.update_summary()
+
+    def update_summary(self):
+        self.summary_text.config(state=tk.NORMAL)
+        self.summary_text.delete("1.0", tk.END)
+
+        budget = self.get_budget()
+        
+        if not os.path.exists(EXPENSE_FILE) or os.stat(EXPENSE_FILE).st_size == 0:
+            self.summary_text.insert(tk.END, "No expenses recorded yet.\n")
+            self.summary_text.config(state=tk.DISABLED)
+            return
+
+        try:
+            df = pd.read_csv(EXPENSE_FILE)
+            if df.empty:
+                self.summary_text.insert(tk.END, "No expenses recorded yet.\n")
+                self.summary_text.config(state=tk.DISABLED)
+                return
+
+            cat_summary = df.groupby("Category")["Amount"].sum()
+            total_spent = df["Amount"].sum()
+            remaining = budget - total_spent
+            pct = (total_spent / budget * 100) if budget > 0 else 0.0
+
+            summary_str = "--- CATEGORY SUMMARY ---\n"
+            for cat, amt in cat_summary.items():
+                summary_str += f"{cat}: {amt:g}\n"
+            
+            summary_str += "\n-------------------------\n"
+            summary_str += f"Total Spent : {total_spent:g}\n"
+            summary_str += f"Budget      : {budget:g}\n"
+            summary_str += f"Remaining   : {remaining:g}\n"
+            
+            if budget > 0:
+                summary_str += f"Usage       : {pct:.2f}%\n"
+                if total_spent > budget:
+                    summary_str += "\n⚠️ BUDGET EXCEEDED!\n"
+                elif pct >= 80:
+                    summary_str += f"\n⚠️ Warning: {pct:.2f}% used!\n"
+            else:
+                summary_str += "\n⚠️ No budget set.\n"
+
+            self.summary_text.insert(tk.END, summary_str)
+        except Exception as e:
+            self.summary_text.insert(tk.END, f"Error generating summary: {e}")
+
+        self.summary_text.config(state=tk.DISABLED)
+
+    def generate_report(self):
+        budget = self.get_budget()
+        if not os.path.exists(EXPENSE_FILE):
+            messagebox.showinfo("Report", "No expense file found.")
+            return
+
+        df = pd.read_csv(EXPENSE_FILE)
+        if df.empty:
+            messagebox.showinfo("Report", "No expenses recorded to generate report.")
+            return
+
+        cat_summary = df.groupby("Category")["Amount"].sum()
+        total_spent = df["Amount"].sum()
+        remaining = budget - total_spent
+        pct = (total_spent / budget * 100) if budget > 0 else 0.0
+
+        report_parts = [f"{cat}: {amt:g}" for cat, amt in cat_summary.items()]
+        report_str = " | ".join(report_parts)
+        report_str += f" | Total spent: {total_spent:g} | Remaining: {remaining:g}"
+        
+        if budget > 0:
+            if total_spent > budget:
+                report_str += f" | Budget exceeded! ({pct:.2f}%)"
+            elif pct >= 80:
+                report_str += f" | Warning: {pct:.2f}% of the budget used."
+
+        messagebox.showinfo("Expense Report", report_str)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ExpenseManagerApp(root)
+    root.mainloop()
